@@ -1,0 +1,109 @@
+library identifier: 'EmbOne', changelog: false
+
+pipeline {
+    agent { label 'Emb' }
+    options {
+        skipDefaultCheckout true
+    }
+    parameters {
+        //string(name: 'email', defaultValue: 'matt.ligocki@intel.com chandi.priya.kosaraju@intel.com wael.f.moussa@intel.com', description: 'Whitespace separator for multiple emails')
+        //string(name: 'root_dir', defaultValue: 'c:\temp', description: '')
+        //string(name: 'wash_groups', defaultValue: 'users adg ciaf soc p1278 tyc78', description: '')
+        //string(name: 'git_url', defaultValue: 'https://github.com/intel-restricted/applications.manufacturing.intel.process-design-kit.integration.runsets.icv-compile-check', description: '')
+        //string(name: 'pdktest_git_url', defaultValue: 'https://github.com/intel-restricted/applications.manufacturing.intel.process-design-kit.validation.runsets.rsqa', description: '')
+        //string(name: 'cmd_opt', defaultValue: '-s -v --kit-name pdk782_r0.9 --tech-opt opt12 --run-dir ./run --pv-tool icv', description: '')
+        //string(name: 'nb_cmd_opt', defaultValue: '-s -v --kit-name pdk782_r0.9 --tech-opt opt12 --run-dir ./run --pv-tool icv --nbconfig ./netbatch.ini --nbserver', description: '')
+        //string(name: 'conf_file', defaultValue: 'conf/p1278d3.conf', description: '')
+    }
+    environment {
+        QA_WORK_DIR = "${params.root_dir}/${JOB_NAME}/${BUILD_NUMBER}"
+        //INTG_REPO = "icv_compile_check"
+        PROJ_REPO = "Emb_Poc"
+    }
+    stages {
+        // Python virtualenv management. DO NOT remove or reorder setTox()
+        stage('Tox') {
+            steps {
+                dir("${QA_WORK_DIR}") {
+                    script {
+                        intgCommitShort = cloneRepo(
+                            [
+                                //gitUrl: "${params.git_url}",
+                                //gitBranch: "${env.BRANCH_NAME}",
+                                //credentialsId: "pdkqaadm-token",
+                            ]
+                        )
+                        testCommitShort = cloneRepo(
+                            [
+                                //gitUrl: "${params.pdktest_git_url}",
+                                //gitBranch: "refs/heads/main",
+                                //credentialsId: "pdkqaadm-token",
+                            ]
+                        )
+                        currentBuild.description = "${intgCommitShort} | ${testCommitShort}"
+                    }
+                    setBuildEnvVars()
+                    setTox()
+                }
+            }
+        }
+        stage('Setup') {
+            steps {
+                runTest(
+                    [
+                        stageName: 'parse_runset',
+                        //rootDir: "${QA_WORK_DIR}",
+                       // gitUrl: "${params.pdktest_git_url}",
+                        //washGrp: "${params.wash_groups}",
+                        //cmdOpt: "src/test_compile_check.py::test_setup_parse_runset --csv results_parse_runset.csv --pconf ${QA_WORK_DIR}/$PROJ_REPO/${params.conf_file} ${params.nb_cmd_opt}",
+                        continueOnError: false
+                    ]
+                )
+                runTest(
+                    [
+                        stageName: 'compile_testlist',
+                       // rootDir: "${QA_WORK_DIR}",
+                        //gitUrl: "${params.pdktest_git_url}",
+                        //washGrp: "${params.wash_groups}",
+                        //cmdOpt: "src/test_compile_check.py::test_setup_compile_testlist --csv results_compile_testlist.csv --pconf ${QA_WORK_DIR}/$PROJ_REPO/${params.conf_file} ${params.cmd_opt}",
+                        continueOnError: false
+                    ]
+                )
+            }
+        }
+        stage('Verify') {
+                steps {
+                    runTest(
+                        [
+                            //stageName: 'compile_check',
+                            //rootDir: "${QA_WORK_DIR}",
+                            //gitUrl: "${params.pdktest_git_url}",
+                            //washGrp: "${params.wash_groups}",
+                            //cmdOpt: "src/test_compile_check.py::test_verify_compile_check --csv results_compile_check.csv --pconf ${QA_WORK_DIR}/$PROJ_REPO/${params.conf_file} ${params.nb_cmd_opt}",
+                        ]
+                    )
+                }
+        }
+        stage('Cleanup') {
+            steps {
+                runTest(
+                    [
+                        stageName: 'summary',
+                        continueOnError: false
+                    ]
+                )
+            }
+        }
+    }
+    post {
+        always {
+            //sendEmail("${params.email}")
+
+            // Upload build artifacts to JFrog Artifactory
+            uploadArtifacts("${QA_WORK_DIR}", ["${INTG_REPO}/results_*.csv"])
+
+            // Publish test results to Kit Dashboard
+            // publishKitVal("${QA_WORK_DIR}/${INTG_REPO}")
+        }
+    }
+}
